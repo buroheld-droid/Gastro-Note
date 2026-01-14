@@ -100,14 +100,14 @@ class _PinLoginScreenState extends ConsumerState<PinLoginScreen> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.all(MediaQuery.of(context).size.width < 480 ? 16 : 24),
             child: Card(
               elevation: 8,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Padding(
-                padding: const EdgeInsets.all(32),
+                padding: EdgeInsets.all(MediaQuery.of(context).size.width < 480 ? 20 : 32),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
