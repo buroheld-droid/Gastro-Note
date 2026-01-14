@@ -91,6 +91,59 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   );
   double get _due => (_total - _paid);
 
+  Widget _buildStatusBadge(ThemeData theme, String status) {
+    Color color;
+    String label;
+
+    switch (status) {
+      case 'in_progress':
+        color = Colors.orange;
+        label = 'In Arbeit';
+        break;
+      case 'ready':
+        color = Colors.green;
+        label = 'Fertig';
+        break;
+      case 'delivered':
+        color = Colors.blue;
+        label = 'Serviert';
+        break;
+      default:
+        color = Colors.red;
+        label = 'Offen';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -150,13 +203,14 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                           final price = (item['unit_price'] as num).toDouble();
                           final total = (item['total'] as num).toDouble();
 
+                          final status =
+                              (item['preparation_status'] as String?) ?? 'pending';
+
                           return Padding(
                             padding: EdgeInsets.only(
                               bottom: isPhone ? 6 : 8,
                             ),
                             child: Row(
-                              mainAxisAlignment:
-                                  MainAxisAlignment.spaceBetween,
                               children: [
                                 Expanded(
                                   child: Column(
@@ -167,12 +221,18 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                                         '$qty x $name',
                                         style: theme.textTheme.bodyMedium,
                                       ),
-                                      Text(
-                                        '€ ${price.toStringAsFixed(2)} je',
-                                        style: theme.textTheme.bodySmall
-                                            ?.copyWith(
-                                          color: theme.colorScheme.outline,
-                                        ),
+                                      const SizedBox(height: 2),
+                                      Row(
+                                        children: [
+                                          Text(
+                                            '€ ${price.toStringAsFixed(2)} je',
+                                            style: theme.textTheme.bodySmall?.copyWith(
+                                              color: theme.colorScheme.outline,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          _buildStatusBadge(theme, status),
+                                        ],
                                       ),
                                     ],
                                   ),

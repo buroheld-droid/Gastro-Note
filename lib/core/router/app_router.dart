@@ -2,9 +2,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/admin/presentation/admin_dashboard_screen.dart';
+import '../../features/admin/presentation/revenue_dashboard_screen.dart';
 import '../../features/auth/presentation/pin_login_screen.dart';
 import '../../features/employees/presentation/employees_screen.dart';
 import '../../features/kitchen/presentation/kitchen_screen.dart';
+import '../../features/kitchen/presentation/kitchen_display_screen.dart';
+import '../../features/kitchen/presentation/bar_display_screen.dart';
 import '../../features/pos/presentation/pos_screen.dart';
 import '../../features/products/presentation/products_screen.dart';
 import '../../features/reports/presentation/reports_screen.dart';
@@ -44,6 +47,18 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/pin-login',
         name: 'pin-login',
         builder: (context, state) => const PinLoginScreen(),
+      ),
+      // Kitchen Display Route (full screen, no shell)
+      GoRoute(
+        path: '/kitchen-display',
+        name: 'kitchen-display',
+        builder: (context, state) => const KitchenDisplayScreen(),
+      ),
+      // Bar Display Route (full screen, no shell)
+      GoRoute(
+        path: '/bar-display',
+        name: 'bar-display',
+        builder: (context, state) => const BarDisplayScreen(),
       ),
 
       // Protected Routes
@@ -100,6 +115,16 @@ final routerProvider = Provider<GoRouter>((ref) {
                 pageBuilder: (context, state) => NoTransitionPage(
                   child: AdminDashboardScreen(restaurantId: _mockRestaurantId),
                 ),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/revenue',
+                name: 'revenue',
+                pageBuilder: (context, state) =>
+                    const NoTransitionPage(child: RevenueDashboardScreen()),
               ),
             ],
           ),

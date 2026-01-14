@@ -582,4 +582,89 @@ class OrdersRepository {
     );
     return (res as List).cast<Map<String, dynamic>>();
   }
+
+  // Kitchen Display System Methods
+  Future<void> updateItemPreparationStatus(
+    String itemId,
+    String status,
+  ) async {
+    await _client.from('order_items').update({
+      'preparation_status': status,
+      'prepared_at': status == 'ready' ? DateTime.now().toIso8601String() : null,
+    }).eq('id', itemId);
+  }
+
+  Future<List<Map<String, dynamic>>> getKitchenItems() async {
+    final res = await _client
+        .from('kitchen_items_view')
+        .select()
+        .order('order_created_at');
+    return (res as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<List<Map<String, dynamic>>> getBarItems() async {
+    final res = await _client
+        .from('bar_items_view')
+        .select()
+        .order('order_created_at');
+    return (res as List).cast<Map<String, dynamic>>();
+  }
+
+  // Revenue & Analytics Methods
+  Future<Map<String, dynamic>> getTodayRevenueSummary() async {
+    final res = await _client
+        .from('daily_revenue_summary_view')
+        .select()
+        .single();
+    return res as Map<String, dynamic>;
+  }
+
+  Future<List<Map<String, dynamic>>> getEmployeeRevenueToday() async {
+    final res = await _client
+        .from('daily_employee_revenue_view')
+        .select()
+        .order('total_revenue', ascending: false);
+    return (res as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<List<Map<String, dynamic>>> getHourlyRevenue() async {
+    final res = await _client
+        .from('hourly_revenue_view')
+        .select()
+        .order('hour', ascending: false);
+    return (res as List).cast<Map<String, dynamic>>();
+  }
+
+  /// Markiere Order als abgeschlossen durch Mitarbeiter
+  Future<void> completeOrder(String orderId, String completedByEmployeeId) async {
+    await _client
+        .from('orders')
+        .update({
+          'status': 'completed',
+          'completed_by': completedByEmployeeId,
+          'updated_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', orderId);
+  }
+
+  /// Speichere Zahlung mit Mitarbeiter-ID
+  Future<void> addPaymentWithEmployee({
+    required String orderId,
+    required String method,
+    required double amount,
+    required String employeeId,
+    double? receivedAmount,
+    double? changeAmount,
+    String? reference,
+  }) async {
+    await _client.from('payments').insert({
+      'order_id': orderId,
+      'payment_method': method,
+      'amount': amount.toStringAsFixed(2),
+      'received_amount': receivedAmount?.toStringAsFixed(2),
+      'change_amount': changeAmount?.toStringAsFixed(2),
+      'reference': reference,
+      'created_by': employeeId,
+    });
+  }
 }

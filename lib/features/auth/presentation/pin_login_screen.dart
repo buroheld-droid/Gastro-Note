@@ -62,8 +62,15 @@ class _PinLoginScreenState extends ConsumerState<PinLoginScreen> {
         // Set current employee in provider
         ref.read(currentPinEmployeeProvider.notifier).state = employee;
 
-        // Navigate to home
-        context.go('/');
+        // Rollenbasierte Navigation
+        final role = employee.role.toLowerCase();
+        if (role.contains('koch') || role.contains('kitchen')) {
+          context.go('/kitchen-display');
+        } else if (role.contains('bar')) {
+          context.go('/bar-display');
+        } else {
+          context.go('/');
+        }
       }
     } on PinLockoutException catch (e) {
       if (mounted) {
