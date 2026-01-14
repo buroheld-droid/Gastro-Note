@@ -20,9 +20,11 @@ class _PosTableScreenState extends ConsumerState<PosTableScreen> {
   Widget build(BuildContext context) {
     final tablesAsync = ref.watch(tablesProvider);
     final theme = Theme.of(context);
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isPhone = screenWidth < 768;
 
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(isPhone ? 12 : 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
