@@ -407,41 +407,81 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
               // Action Buttons
               Padding(
                 padding: EdgeInsets.all(isPhone ? 12 : 16),
-                child: Wrap(
-                  spacing: isPhone ? 8 : 12,
-                  runSpacing: isPhone ? 8 : 12,
-                  children: [
-                    Expanded(
-                      child: FilledButton.tonal(
-                        onPressed: _order == null ? null : _onAddItems,
-                        child: const Text('Positionen hinzufügen'),
+                child: isPhone
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          FilledButton.tonal(
+                            onPressed: _order == null ? null : _onAddItems,
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size.fromHeight(44),
+                            ),
+                            child: const Text('Positionen hinzufügen'),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: FilledButton.tonal(
+                                  onPressed: _items.isEmpty ? null : _showSplitDialog,
+                                  style: FilledButton.styleFrom(
+                                    minimumSize: const Size.fromHeight(44),
+                                  ),
+                                  child: const Text('Separieren'),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: FilledButton(
+                                  onPressed: _order == null ? null : _showCheckoutDialog,
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: theme.colorScheme.tertiary,
+                                    minimumSize: const Size.fromHeight(44),
+                                  ),
+                                  child: const Text('Abkassieren'),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          FilledButton.tonal(
+                            onPressed: (_order != null && _due <= 0.01)
+                                ? _onComplete
+                                : null,
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size.fromHeight(44),
+                            ),
+                            child: const Text('Abschließen'),
+                          ),
+                        ],
+                      )
+                    : Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          FilledButton.tonal(
+                            onPressed: _order == null ? null : _onAddItems,
+                            child: const Text('Positionen hinzufügen'),
+                          ),
+                          FilledButton.tonal(
+                            onPressed: _items.isEmpty ? null : _showSplitDialog,
+                            child: const Text('Separieren'),
+                          ),
+                          FilledButton(
+                            onPressed: _order == null ? null : _showCheckoutDialog,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: theme.colorScheme.tertiary,
+                            ),
+                            child: const Text('Abkassieren'),
+                          ),
+                          FilledButton.tonal(
+                            onPressed: (_order != null && _due <= 0.01)
+                                ? _onComplete
+                                : null,
+                            child: const Text('Abschließen'),
+                          ),
+                        ],
                       ),
-                    ),
-                    Expanded(
-                      child: FilledButton.tonal(
-                        onPressed: _items.isEmpty ? null : _showSplitDialog,
-                        child: const Text('Separieren'),
-                      ),
-                    ),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: _order == null ? null : _showCheckoutDialog,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: theme.colorScheme.tertiary,
-                        ),
-                        child: const Text('Abkassieren'),
-                      ),
-                    ),
-                    Expanded(
-                      child: FilledButton.tonal(
-                        onPressed: (_order != null && _due <= 0.01)
-                            ? _onComplete
-                            : null,
-                        child: const Text('Abschließen'),
-                      ),
-                    ),
-                  ],
-                ),
               ),
               SizedBox(height: isPhone ? 12 : 16),
             ],
