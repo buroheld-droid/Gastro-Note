@@ -1,0 +1,12 @@
+{
+  "files.exclude": {
+    "**/backend/**": true,
+    "**/frontend/**": true
+  },
+  "search.exclude": {
+    "**/backend/**": true,
+    "**/frontend/**": true
+  },
+  "typescript.validate.enable": false,
+  "javascript.validate.enable": false
+}
