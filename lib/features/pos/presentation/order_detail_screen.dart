@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/repository_providers.dart';
+import '../../../core/services/pin_login_service.dart';
 import '../../orders/data/orders_repository.dart';
 import 'table_order_screen.dart';
 import '../../tables/domain/restaurant_table.dart';
@@ -553,6 +554,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
 
   Future<void> _onAddPayment() async {
     final repo = ref.read(ordersRepositoryProvider);
+    final currentEmployee = ref.read(currentPinEmployeeProvider);
     final id = _order!['id'] as String;
     final amount = double.tryParse(_amountCtrl.text.trim()) ?? 0;
 
@@ -560,6 +562,15 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Bitte gültigen Betrag eingeben')),
+        );
+      }
+      return;
+    }
+
+    if (currentEmployee == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Mitarbeiter nicht authentifiziert')),
         );
       }
       return;
@@ -581,10 +592,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     }
 
     try {
-      await repo.addPayment(
+      // Verwende addPaymentWithEmployee statt addPayment - Kellner wird erfasst
+      await repo.addPaymentWithEmployee(
         orderId: id,
         method: _method,
         amount: amount,
+        employeeId: currentEmployee.id,
         receivedAmount: received,
         changeAmount: change,
         reference: refStr,
@@ -596,7 +609,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Zahlung gespeichert')),
+          SnackBar(
+            content: Text(
+              'Zahlung gespeichert (${currentEmployee.name})',
+            ),
+          ),
         );
         await _reload();
       }
