@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/repository_providers.dart';
@@ -34,7 +33,16 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _amountCtrl.dispose();
+    _receivedCtrl.dispose();
+    _referenceCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() => _loading = true);
     await _reload();
     if (mounted) {
@@ -44,18 +52,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
 
   Future<void> _reload() async {
     final repo = ref.read(ordersRepositoryProvider);
-
     try {
-      Map<String, dynamic>? order;
-      if (widget.table.currentOrderId != null) {
-        order = await repo.getOpenOrderForTable(widget.table.id);
-      } else {
-        order = await repo.getOpenOrderForTable(widget.table.id);
-      }
-
+      final order = await repo.getOpenOrderForTable(widget.table.id);
       if (order != null) {
         final orderId = order['id'] as String;
-        // Paralleles Laden von Items und Payments
+        // Load items and payments in parallel
         final results = await Future.wait([
           repo.getOrderItems(orderId),
           repo.getPayments(orderId),
@@ -74,9 +75,9 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Fehler beim Laden: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Fehler beim Laden: $e')),
+        );
       }
     }
   }
@@ -99,464 +100,379 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : (_order == null)
-          ? const Center(child: Text('Keine offene Bestellung'))
-          : LayoutBuilder(
-              builder: (context, constraints) {
-                final isPhone = constraints.maxWidth < 768;
-                
-                if (isPhone) {
-                  // Phone: Vertical stacked layout
-                  return SingleChildScrollView(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Items section
-                          Text('Positionen', style: theme.textTheme.titleLarge),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              FilledButton.tonal(
-                                onPressed: _order == null ? null : _onAddItems,
-                                child: const Text('Nachbestellen'),
-                              ),
-                              const SizedBox(width: 8),
-                              if (_items.isNotEmpty)
-                                FilledButton.tonal(
-                                  onPressed: _items.isEmpty ? null : _showSplitDialog,
-                                  child: const Text('Separieren'),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Card(
-                            child: ListView.separated(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              itemCount: _items.length,
-                              separatorBuilder: (context, index) =>
-                                  const Divider(height: 1),
-                              itemBuilder: (context, i) {
-                                final it = _items[i];
-                                final qty = it['quantity'] as int? ?? 0;
-                                final name = it['product_name'] as String? ?? '';
-                                final total =
-                                    (it['total'] as num?)?.toDouble() ?? 0.0;
-                                return ListTile(
-                                  dense: true,
-                                  title: Text('$qty x $name'),
-                                  trailing: Text('€ ${total.toStringAsFixed(2)}'),
-                                );
-                              },
+          : _order == null
+              ? const Center(child: Text('Keine Bestellung gefunden'))
+              : ref.watch(tablesProvider).when(
+                    data: (_) => _buildContent(context, theme),
+                    loading: () => const Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                    error: (error, stack) => Center(
+                      child: Text('Fehler beim Laden der Tische: $error'),
+                    ),
+                  ),
+    );
+  }
+
+  Widget _buildContent(BuildContext context, ThemeData theme) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isPhone = screenWidth < 768;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          child: Column(
+            children: [
+              // Items Section
+              Padding(
+                padding: EdgeInsets.all(isPhone ? 12 : 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Positionen',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: isPhone ? 8 : 12),
+                    if (_items.isEmpty)
+                      const Text('Keine Positionen')
+                    else
+                      ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _items.length,
+                        itemBuilder: (context, index) {
+                          final item = _items[index];
+                          final name = item['product_name'] as String;
+                          final qty = item['quantity'] as int;
+                          final price = (item['unit_price'] as num).toDouble();
+                          final total = (item['total'] as num).toDouble();
+
+                          return Padding(
+                            padding: EdgeInsets.only(
+                              bottom: isPhone ? 6 : 8,
                             ),
-                          ),
-                          const SizedBox(height: 16),
-                          
-                          // Totals section
-                          Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            child: Row(
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      const Text('Zwischensumme'),
-                                      Text('€ ${_subtotal.toStringAsFixed(2)}'),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      const Text('MwSt'),
-                                      Text('€ ${_tax.toStringAsFixed(2)}'),
-                                    ],
-                                  ),
-                                  const Divider(height: 12),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text('Gesamt', style: theme.textTheme.titleMedium),
                                       Text(
-                                        '€ ${_total.toStringAsFixed(2)}',
-                                        style: theme.textTheme.titleMedium,
+                                        '$qty x $name',
+                                        style: theme.textTheme.bodyMedium,
                                       ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          
-                          // Payments section
-                          Text('Zahlungen', style: theme.textTheme.titleLarge),
-                          const SizedBox(height: 8),
-                          Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                children: [
-                                  ..._payments.map(
-                                    (p) => ListTile(
-                                      dense: true,
-                                      contentPadding: EdgeInsets.zero,
-                                      title: Text('${p['payment_method']}'),
-                                      trailing: Text(
-                                        '€ ${(p['amount'] as num).toStringAsFixed(2)}',
-                                      ),
-                                    ),
-                                  ),
-                                  const Divider(height: 12),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      const Text('Bezahlt'),
-                                      Text('€ ${_paid.toStringAsFixed(2)}'),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      const Text('Offen'),
                                       Text(
-                                        '€ ${_due.clamp(0, double.infinity).toStringAsFixed(2)}',
-                                        style: theme.textTheme.bodyLarge?.copyWith(
-                                          color: _due > 0
-                                              ? theme.colorScheme.error
-                                              : theme.colorScheme.primary,
+                                        '€ ${price.toStringAsFixed(2)} je',
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                          color: theme.colorScheme.outline,
                                         ),
                                       ),
                                     ],
                                   ),
-                                ],
-                              ),
+                                ),
+                                Text(
+                                  '€ ${total.toStringAsFixed(2)}',
+                                  style: theme.textTheme.bodyMedium,
+                                ),
+                              ],
                             ),
+                          );
+                        },
+                      ),
+                  ],
+                ),
+              ),
+              const Divider(),
+              // Summary Section
+              Padding(
+                padding: EdgeInsets.all(isPhone ? 12 : 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Summen',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: isPhone ? 8 : 12),
+                    _SummaryRow(
+                      label: 'Netto:',
+                      value: '€ ${_subtotal.toStringAsFixed(2)}',
+                      theme: theme,
+                    ),
+                    SizedBox(height: isPhone ? 4 : 6),
+                    _SummaryRow(
+                      label: 'MwSt:',
+                      value: '€ ${_tax.toStringAsFixed(2)}',
+                      theme: theme,
+                    ),
+                    SizedBox(height: isPhone ? 4 : 6),
+                    _SummaryRow(
+                      label: 'Gesamt:',
+                      value: '€ ${_total.toStringAsFixed(2)}',
+                      theme: theme,
+                      isBold: true,
+                    ),
+                    SizedBox(height: isPhone ? 8 : 12),
+                    _SummaryRow(
+                      label: 'Bezahlt:',
+                      value: '€ ${_paid.toStringAsFixed(2)}',
+                      theme: theme,
+                    ),
+                    if (_due > 0.01)
+                      Padding(
+                        padding: EdgeInsets.only(top: isPhone ? 6 : 8),
+                        child: _SummaryRow(
+                          label: 'Noch zu zahlen:',
+                          value: '€ ${_due.toStringAsFixed(2)}',
+                          theme: theme,
+                          valueColor: theme.colorScheme.error,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const Divider(),
+              // Payments Section
+              Padding(
+                padding: EdgeInsets.all(isPhone ? 12 : 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Zahlungen',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: isPhone ? 8 : 12),
+                    if (_payments.isEmpty)
+                      const Text('Keine Zahlungen')
+                    else
+                      ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _payments.length,
+                        itemBuilder: (context, index) {
+                          final payment = _payments[index];
+                          final method = payment['payment_method'] as String;
+                          final amount =
+                              (payment['amount'] as num).toDouble();
+
+                          return Padding(
+                            padding: EdgeInsets.only(
+                              bottom: isPhone ? 6 : 8,
+                            ),
+                            child: Row(
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  method == 'cash' ? 'Bargeld' : 'Karte',
+                                  style: theme.textTheme.bodyMedium,
+                                ),
+                                Text(
+                                  '€ ${amount.toStringAsFixed(2)}',
+                                  style: theme.textTheme.bodyMedium,
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    SizedBox(height: isPhone ? 12 : 16),
+                    // Payment Method & Amount Input
+                    Padding(
+                      padding: EdgeInsets.only(
+                        bottom: isPhone ? 12 : 16,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Zahlung hinzufügen',
+                            style: theme.textTheme.labelLarge,
                           ),
-                          const SizedBox(height: 16),
-                          
-                          // Payment method selection
-                          SegmentedButton<String>(
-                            segments: const [
-                              ButtonSegment(value: 'cash', label: Text('Bar')),
-                              ButtonSegment(value: 'card', label: Text('Karte')),
+                          SizedBox(height: isPhone ? 8 : 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: DropdownButton<String>(
+                                  value: _method,
+                                  isExpanded: true,
+                                  onChanged: (value) {
+                                    if (value != null) {
+                                      setState(() => _method = value);
+                                    }
+                                  },
+                                  items: [
+                                    DropdownMenuItem(
+                                      value: 'cash',
+                                      child: Text(
+                                        'Bargeld',
+                                        style: theme.textTheme.bodyMedium,
+                                      ),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'card',
+                                      child: Text(
+                                        'Karte',
+                                        style: theme.textTheme.bodyMedium,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ],
-                            selected: {_method},
-                            onSelectionChanged: (s) =>
-                                setState(() => _method = s.first),
                           ),
-                          const SizedBox(height: 12),
+                          SizedBox(height: isPhone ? 8 : 12),
                           TextField(
                             controller: _amountCtrl,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            inputFormatters: [
-                              FilteringTextInputFormatter.allow(
-                                RegExp(r'^\d*\.?\d{0,2}'),
+                            decoration: InputDecoration(
+                              labelText: 'Betrag (€)',
+                              border: const OutlineInputBorder(),
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: isPhone ? 8 : 12,
                               ),
-                            ],
-                            decoration: const InputDecoration(
-                              labelText: 'Betrag (EUR)',
+                            ),
+                            keyboardType:
+                                const TextInputType.numberWithOptions(
+                              decimal: true,
                             ),
                           ),
                           if (_method == 'cash')
                             Padding(
-                              padding: const EdgeInsets.only(top: 12),
+                              padding: EdgeInsets.only(
+                                top: isPhone ? 8 : 12,
+                              ),
                               child: TextField(
                                 controller: _receivedCtrl,
-                                keyboardType: const TextInputType.numberWithOptions(
-                                  decimal: true,
-                                ),
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.allow(
-                                    RegExp(r'^\d*\.?\d{0,2}'),
+                                decoration: InputDecoration(
+                                  labelText: 'Erhalten (€)',
+                                  border: const OutlineInputBorder(),
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: isPhone ? 8 : 12,
                                   ),
-                                ],
-                                decoration: const InputDecoration(
-                                  labelText: 'Erhalten (EUR) – optional',
+                                ),
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                  decimal: true,
                                 ),
                               ),
                             ),
                           if (_method == 'card')
                             Padding(
-                              padding: const EdgeInsets.only(top: 12),
+                              padding: EdgeInsets.only(
+                                top: isPhone ? 8 : 12,
+                              ),
                               child: TextField(
                                 controller: _referenceCtrl,
-                                decoration: const InputDecoration(
-                                  labelText: 'Referenz – optional',
+                                decoration: InputDecoration(
+                                  labelText: 'Referenznummer (optional)',
+                                  border: const OutlineInputBorder(),
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: isPhone ? 8 : 12,
+                                  ),
                                 ),
                               ),
                             ),
-                          const SizedBox(height: 16),
-                          
-                          // Action buttons
+                          SizedBox(height: isPhone ? 12 : 16),
                           SizedBox(
                             width: double.infinity,
                             child: FilledButton(
-                              onPressed: _order == null ? null : _onAddPayment,
+                              onPressed: _order == null
+                                  ? null
+                                  : _onAddPayment,
                               child: const Text('Zahlung hinzufügen'),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          SizedBox(
-                            width: double.infinity,
-                            child: FilledButton(
-                              onPressed: _order == null ? null : _showCheckoutDialog,
-                              style: FilledButton.styleFrom(
-                                backgroundColor: theme.colorScheme.tertiary,
-                              ),
-                              child: const Text('Tisch Abkassieren'),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          SizedBox(
-                            width: double.infinity,
-                            child: FilledButton.tonal(
-                              onPressed: (_order != null && _due <= 0.01)
-                                  ? _onComplete
-                                  : null,
-                              child: const Text('Bestellung abschließen'),
                             ),
                           ),
                         ],
                       ),
                     ),
-                  );
-                } else {
-                  // Tablet/Desktop: Horizontal side-by-side layout
-                  return Row(
-                    children: [
-                      Expanded(
-                        flex: 3,
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('Positionen', style: theme.textTheme.titleLarge),
-                                  Row(
-                                    children: [
-                                      FilledButton.tonal(
-                                        onPressed: _order == null ? null : _onAddItems,
-                                        child: const Text('Nachbestellen'),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      if (_items.isNotEmpty)
-                                        FilledButton.tonal(
-                                          onPressed: _items.isEmpty ? null : _showSplitDialog,
-                                          child: const Text('Separieren'),
-                                        ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Expanded(
-                                child: ListView.separated(
-                                  itemCount: _items.length,
-                                  separatorBuilder: (context, index) => const Divider(height: 1),
-                                  itemBuilder: (context, i) {
-                                    final it = _items[i];
-                                    final qty = it['quantity'] as int? ?? 0;
-                                    final name = it['product_name'] as String? ?? '';
-                                    final total = (it['total'] as num?)?.toDouble() ?? 0.0;
-                                    return ListTile(
-                                      dense: true,
-                                      title: Text('$qty x $name'),
-                                      trailing: Text('€ ${total.toStringAsFixed(2)}'),
-                                    );
-                                  },
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text('Zwischensumme'),
-                                  Text('€ ${_subtotal.toStringAsFixed(2)}'),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text('MwSt'),
-                                  Text('€ ${_tax.toStringAsFixed(2)}'),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('Gesamt', style: theme.textTheme.titleMedium),
-                                  Text(
-                                    '€ ${_total.toStringAsFixed(2)}',
-                                    style: theme.textTheme.titleMedium,
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
+                  ],
+                ),
+              ),
+              const Divider(),
+              // Action Buttons
+              Padding(
+                padding: EdgeInsets.all(isPhone ? 12 : 16),
+                child: Wrap(
+                  spacing: isPhone ? 8 : 12,
+                  runSpacing: isPhone ? 8 : 12,
+                  children: [
+                    Expanded(
+                      child: FilledButton.tonal(
+                        onPressed: _order == null ? null : _onAddItems,
+                        child: const Text('Positionen hinzufügen'),
                       ),
-                      const VerticalDivider(width: 1),
-                      Expanded(
-                        flex: 2,
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Zahlungen', style: theme.textTheme.titleLarge),
-                              const SizedBox(height: 8),
-                              Expanded(
-                                child: ListView.builder(
-                                  itemCount: _payments.length,
-                                  itemBuilder: (context, i) {
-                                    final p = _payments[i];
-                                    return ListTile(
-                                      dense: true,
-                                      contentPadding: EdgeInsets.zero,
-                                      title: Text('${p['payment_method']}'),
-                                      trailing: Text(
-                                        '€ ${(p['amount'] as num).toStringAsFixed(2)}',
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                              const Divider(height: 24),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text('Bezahlt'),
-                                  Text('€ ${_paid.toStringAsFixed(2)}'),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text('Offen'),
-                                  Text(
-                                    '€ ${_due.clamp(0, double.infinity).toStringAsFixed(2)}',
-                                    style: _due > 0
-                                        ? theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.error)
-                                        : null,
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              SegmentedButton<String>(
-                                segments: const [
-                                  ButtonSegment(value: 'cash', label: Text('Bar')),
-                                  ButtonSegment(value: 'card', label: Text('Karte')),
-                                ],
-                                selected: {_method},
-                                onSelectionChanged: (s) => setState(() => _method = s.first),
-                              ),
-                              const SizedBox(height: 12),
-                              TextField(
-                                controller: _amountCtrl,
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
-                                ],
-                                decoration: const InputDecoration(
-                                  labelText: 'Betrag (EUR)',
-                                ),
-                              ),
-                              if (_method == 'cash')
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 12),
-                                  child: TextField(
-                                    controller: _receivedCtrl,
-                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
-                                    ],
-                                    decoration: const InputDecoration(
-                                      labelText: 'Erhalten (EUR) – optional',
-                                    ),
-                                  ),
-                                ),
-                              if (_method == 'card')
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 12),
-                                  child: TextField(
-                                    controller: _referenceCtrl,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Referenz – optional',
-                                    ),
-                                  ),
-                                ),
-                              const Spacer(),
-                              SizedBox(
-                                width: double.infinity,
-                                child: FilledButton(
-                                  onPressed: _order == null ? null : _onAddPayment,
-                                  child: const Text('Zahlung hinzufügen'),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              SizedBox(
-                                width: double.infinity,
-                                child: FilledButton(
-                                  onPressed: _order == null ? null : _showCheckoutDialog,
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: theme.colorScheme.tertiary,
-                                  ),
-                                  child: const Text('Tisch Abkassieren'),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              SizedBox(
-                                width: double.infinity,
-                                child: FilledButton.tonal(
-                                  onPressed: (_order != null && _due <= 0.01) ? _onComplete : null,
-                                  child: const Text('Bestellung abschließen'),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                    ),
+                    Expanded(
+                      child: FilledButton.tonal(
+                        onPressed: _items.isEmpty ? null : _showSplitDialog,
+                        child: const Text('Separieren'),
                       ),
-                    ],
-                  );
-                }
-              },
-            );
-        }
+                    ),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: _order == null ? null : _showCheckoutDialog,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: theme.colorScheme.tertiary,
+                        ),
+                        child: const Text('Abkassieren'),
+                      ),
+                    ),
+                    Expanded(
+                      child: FilledButton.tonal(
+                        onPressed: (_order != null && _due <= 0.01)
+                            ? _onComplete
+                            : null,
+                        child: const Text('Abschließen'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: isPhone ? 12 : 16),
+            ],
+          ),
+        );
       },
     );
+  }
 
   Future<void> _onAddPayment() async {
     final repo = ref.read(ordersRepositoryProvider);
     final id = _order!['id'] as String;
     final amount = double.tryParse(_amountCtrl.text.trim()) ?? 0;
+
     if (amount <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Bitte gültigen Betrag eingeben')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Bitte gültigen Betrag eingeben')),
+        );
+      }
       return;
     }
+
     double? received;
     double? change;
     String? refStr;
+
     if (_method == 'cash') {
       received = double.tryParse(_receivedCtrl.text.trim());
-      if (received != null) {
-        change = (received - amount);
-        if (change < 0) change = 0;
+      if (received != null && received >= amount) {
+        change = received - amount;
       }
     } else if (_method == 'card') {
       refStr = _referenceCtrl.text.trim().isEmpty
@@ -564,15 +480,33 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
           : _referenceCtrl.text.trim();
     }
 
-    await repo.addPayment(
-      orderId: id,
-      method: _method,
-      amount: amount,
-      receivedAmount: received,
-      changeAmount: change,
-      reference: refStr,
-    );
-    await _reloadPayments();
+    try {
+      await repo.addPayment(
+        orderId: id,
+        method: _method,
+        amount: amount,
+        receivedAmount: received,
+        changeAmount: change,
+        reference: refStr,
+      );
+
+      _amountCtrl.clear();
+      _receivedCtrl.clear();
+      _referenceCtrl.clear();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Zahlung gespeichert')),
+        );
+        await _reload();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Fehler: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _onAddItems() async {
@@ -589,24 +523,19 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     if (!mounted) return;
     await _reload();
     ref.read(invalidateTablesProvider)();
-    await ref.read(tablesProvider.future);
-  }
-
-  Future<void> _reloadPayments() async {
-    final repo = ref.read(ordersRepositoryProvider);
-    final id = _order!['id'] as String;
-    final pays = await repo.getPayments(id);
-    setState(() => _payments = pays);
   }
 
   void _showCheckoutDialog() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isPhone = screenWidth < 768;
+
     showDialog(
       context: context,
       builder: (context) => Dialog(
         child: SizedBox(
-          width: 400,
+          width: isPhone ? screenWidth * 0.9 : 400,
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.all(isPhone ? 12 : 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -615,7 +544,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                   'Tisch Abkassieren',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: isPhone ? 12 : 16),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -631,22 +560,25 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 ),
                 if (_due > 0.01)
                   Padding(
-                    padding: const EdgeInsets.only(top: 8),
+                    padding: EdgeInsets.only(top: isPhone ? 6 : 8),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text('Noch zu zahlen:'),
                         Text(
                           '€ ${_due.toStringAsFixed(2)}',
-                          style: Theme.of(context).textTheme.bodyMedium
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
                               ?.copyWith(
-                                color: Theme.of(context).colorScheme.error,
+                                color:
+                                    Theme.of(context).colorScheme.error,
                               ),
                         ),
                       ],
                     ),
                   ),
-                const SizedBox(height: 24),
+                SizedBox(height: isPhone ? 16 : 24),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
@@ -682,9 +614,9 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
 
-    // Schließ sofort - zeige Message
+    // Close dialog immediately
     if (mounted) {
-      Navigator.of(context).pop(); // close loading dialog SOFORT
+      Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Tisch wird abgerechnet...'),
@@ -692,26 +624,29 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         ),
       );
     }
-    
-    // Starte Speicherung im ECHTEN Hintergrund (kein await!)
+
+    // Run in background (fire-and-forget)
     _doCheckoutInBackground(repo, id);
   }
 
-  Future<void> _doCheckoutInBackground(OrdersRepository repo, String id) async {
+  Future<void> _doCheckoutInBackground(
+    OrdersRepository repo,
+    String id,
+  ) async {
     try {
-      // Erfasse Zahlung für den ausstehenden Betrag
       if (_due > 0.01) {
-        await repo.addPayment(orderId: id, method: 'cash', amount: _due);
+        await repo.addPayment(
+          orderId: id,
+          method: 'cash',
+          amount: _due,
+        );
       }
 
-      // Schließe Bestellung ab und gebe Tisch frei
       await repo.completeOrderAndFreeTable(id);
-      
-      // Invalidiere und reload im Hintergrund (blockiert nicht mehr!)
+
       if (mounted) {
         ref.read(invalidateTablesProvider)();
-        // Nicht auf reload warten - nur starten
-        _reloadPayments();
+        _reload();
       }
     } catch (e) {
       if (mounted) {
@@ -725,8 +660,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   Future<void> _onComplete() async {
     final repo = ref.read(ordersRepositoryProvider);
     final id = _order!['id'] as String;
-    
-    // Zeige Message sofort
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -735,19 +669,19 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         ),
       );
     }
-    
-    // Starte im echten Hintergrund (kein await!)
+
     _doCompleteInBackground(repo, id);
   }
 
-  Future<void> _doCompleteInBackground(OrdersRepository repo, String id) async {
+  Future<void> _doCompleteInBackground(
+    OrdersRepository repo,
+    String id,
+  ) async {
     try {
       await repo.completeOrderAndFreeTable(id);
-      
-      // Invalidiere und reload im Hintergrund
+
       if (mounted) {
         ref.read(invalidateTablesProvider)();
-        // Nicht auf reload warten - nur starten
         _reload();
       }
     } catch (e) {
@@ -775,16 +709,14 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     final repo = ref.read(ordersRepositoryProvider);
     if (!mounted) return;
 
-    // Show loading dialog
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
 
-    // Schließ sofort - zeige Message
     if (mounted) {
-      Navigator.of(context).pop(); // close progress dialog SOFORT
+      Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Positionen werden separiert...'),
@@ -792,8 +724,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         ),
       );
     }
-    
-    // Starte im echten Hintergrund (kein await!)
+
     _doSplitInBackground(repo, itemQuantities, action, tableId);
   }
 
@@ -803,9 +734,8 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     String action,
     String? tableId,
   ) async {
-    dynamic result;
     try {
-      result = await repo
+      final result = await repo
           .splitOrderItems(
             orderId: _order!['id'],
             itemQuantities: itemQuantities,
@@ -813,6 +743,21 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
             targetTableId: tableId,
           )
           .timeout(const Duration(seconds: 10));
+
+      if (!mounted) return;
+
+      if (action == 'checkout' && mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => _InvoicePaymentDialog(invoice: {'id': result}),
+        );
+      }
+
+      if (mounted) {
+        ref.read(invalidateTablesProvider)();
+        _reload();
+      }
     } on TimeoutException {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -823,38 +768,63 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
           ),
         );
       }
-      return;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Fehler: $e')),
         );
       }
-      return;
     }
-    if (!mounted) return;
+  }
+}
 
-    // Bei "checkout" → Zahlungs-Dialog anzeigen
-    if (action == 'checkout' && mounted) {
-      final invoice = {'id': result};
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => _InvoicePaymentDialog(invoice: invoice),
-      );
-    }
+class _SummaryRow extends StatelessWidget {
+  const _SummaryRow({
+    required this.label,
+    required this.value,
+    required this.theme,
+    this.isBold = false,
+    this.valueColor,
+  });
 
-    // Invalidiere Tische im Hintergrund (KEIN await!)
-    if (mounted) {
-      ref.read(invalidateTablesProvider)();
-      // Nicht auf reload warten - nur starten
-      _reload();
-    }
+  final String label;
+  final String value;
+  final ThemeData theme;
+  final bool isBold;
+  final Color? valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: isBold
+              ? theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                )
+              : theme.textTheme.bodyMedium,
+        ),
+        Text(
+          value,
+          style: isBold
+              ? theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: valueColor,
+                )
+              : theme.textTheme.bodyMedium?.copyWith(
+                  color: valueColor,
+                ),
+        ),
+      ],
+    );
   }
 }
 
 class _SplitDialog extends ConsumerStatefulWidget {
   const _SplitDialog({required this.items, required this.onSplit});
+
   final List<Map<String, dynamic>> items;
   final Function(Map<String, int>, String, String?) onSplit;
 
@@ -863,43 +833,47 @@ class _SplitDialog extends ConsumerStatefulWidget {
 }
 
 class _SplitDialogState extends ConsumerState<_SplitDialog> {
-  late Map<String, int> _quantities; // id -> qty to split
-  String _action = 'checkout'; // 'checkout' or 'table'
+  late Map<String, int> _quantities;
+  String _action = 'checkout';
   String? _targetTableId;
 
   @override
   void initState() {
     super.initState();
-    // Initialize quantities to 0 for all items
-    _quantities = {for (var item in widget.items) (item['id'] as String): 0};
+    _quantities = {
+      for (final item in widget.items) item['id'] as String: 0
+    };
   }
 
-  int _getTotalSelectedQty() {
-    return _quantities.values.fold(0, (sum, qty) => sum + qty);
-  }
+  int get _getTotalSelectedQty =>
+      _quantities.values.fold(0, (sum, qty) => sum + qty);
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final totalSelected = _getTotalSelectedQty();
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isPhone = screenWidth < 768;
     final tablesAsync = ref.watch(tablesProvider);
 
     return Dialog(
       child: SizedBox(
-        width: 500,
+        width: isPhone ? screenWidth * 0.9 : 500,
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.all(isPhone ? 12 : 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Positionen separieren', style: theme.textTheme.titleLarge),
-              const SizedBox(height: 16),
+              Text(
+                'Positionen separieren',
+                style: theme.textTheme.titleLarge,
+              ),
+              SizedBox(height: isPhone ? 12 : 16),
               Text(
                 'Wähle Positionen zum Separieren:',
                 style: theme.textTheme.labelLarge,
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: isPhone ? 6 : 8),
               Expanded(
                 child: SingleChildScrollView(
                   child: Column(
@@ -907,12 +881,14 @@ class _SplitDialogState extends ConsumerState<_SplitDialog> {
                       final id = item['id'] as String;
                       final maxQty = item['quantity'] as int;
                       final name = item['product_name'] as String;
-                      final unitPrice = (item['unit_price'] as num).toDouble();
+                      final unitPrice =
+                          (item['unit_price'] as num).toDouble();
                       final selectedQty = _quantities[id] ?? 0;
-                      final selectedTotal = selectedQty * unitPrice;
 
                       return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        padding: EdgeInsets.symmetric(
+                          vertical: isPhone ? 6 : 8,
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -920,59 +896,42 @@ class _SplitDialogState extends ConsumerState<_SplitDialog> {
                               '$maxQty x $name – € ${(maxQty * unitPrice).toStringAsFixed(2)}',
                               style: theme.textTheme.bodyMedium,
                             ),
-                            const SizedBox(height: 6),
+                            SizedBox(height: isPhone ? 4 : 6),
                             Row(
                               children: [
                                 IconButton(
                                   icon: const Icon(Icons.remove),
+                                  iconSize: 20,
                                   onPressed: selectedQty > 0
                                       ? () {
-                                          setState(() {
-                                            _quantities[id] = selectedQty - 1;
-                                          });
+                                          setState(
+                                            () =>
+                                                _quantities[id] =
+                                                    selectedQty - 1,
+                                          );
                                         }
                                       : null,
-                                  iconSize: 20,
-                                  constraints: const BoxConstraints(
-                                    minWidth: 40,
-                                    minHeight: 40,
-                                  ),
-                                  padding: EdgeInsets.zero,
                                 ),
                                 SizedBox(
-                                  width: 50,
+                                  width: 40,
                                   child: Text(
-                                    '$selectedQty',
+                                    selectedQty.toString(),
                                     textAlign: TextAlign.center,
-                                    style: theme.textTheme.labelLarge,
                                   ),
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.add),
+                                  iconSize: 20,
                                   onPressed: selectedQty < maxQty
                                       ? () {
-                                          setState(() {
-                                            _quantities[id] = selectedQty + 1;
-                                          });
+                                          setState(
+                                            () =>
+                                                _quantities[id] =
+                                                    selectedQty + 1,
+                                          );
                                         }
                                       : null,
-                                  iconSize: 20,
-                                  constraints: const BoxConstraints(
-                                    minWidth: 40,
-                                    minHeight: 40,
-                                  ),
-                                  padding: EdgeInsets.zero,
                                 ),
-                                const SizedBox(width: 12),
-                                if (selectedQty > 0)
-                                  Text(
-                                    '→ € ${selectedTotal.toStringAsFixed(2)}',
-                                    style: theme.textTheme.labelMedium
-                                        ?.copyWith(
-                                          color: theme.colorScheme.primary,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                  ),
                               ],
                             ),
                           ],
@@ -982,23 +941,35 @@ class _SplitDialogState extends ConsumerState<_SplitDialog> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-              Text('Aktion:', style: theme.textTheme.labelLarge),
-              SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(value: 'checkout', label: Text('Abkassieren')),
-                  ButtonSegment(value: 'table', label: Text('Auf Tisch')),
-                ],
-                selected: {_action},
-                onSelectionChanged: (s) {
-                  setState(() {
-                    _action = s.first;
-                    _targetTableId = null;
-                  });
-                },
+              SizedBox(height: isPhone ? 12 : 16),
+              Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: 0,
+                  vertical: isPhone ? 8 : 12,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Aktion:',
+                      style: theme.textTheme.labelLarge,
+                    ),
+                    SizedBox(height: isPhone ? 6 : 8),
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(label: Text('Abkassieren'), value: 'checkout'),
+                        ButtonSegment(label: Text('Tisch'), value: 'table'),
+                      ],
+                      selected: {_action},
+                      onSelectionChanged: (value) {
+                        setState(() => _action = value.first);
+                      },
+                    ),
+                  ],
+                ),
               ),
               if (_action == 'table') ...[
-                const SizedBox(height: 12),
+                SizedBox(height: isPhone ? 12 : 16),
                 tablesAsync.when(
                   data: (tables) {
                     final availableTables = tables
@@ -1028,7 +999,9 @@ class _SplitDialogState extends ConsumerState<_SplitDialog> {
                           .map(
                             (t) => DropdownMenuItem(
                               value: t.id,
-                              child: Text('Tisch ${t.tableNumber} (${t.area})'),
+                              child: Text(
+                                'Tisch ${t.tableNumber} (${t.area})',
+                              ),
                             ),
                           )
                           .toList(),
@@ -1038,7 +1011,7 @@ class _SplitDialogState extends ConsumerState<_SplitDialog> {
                   error: (err, st) => Text('Fehler: $err'),
                 ),
               ],
-              const SizedBox(height: 16),
+              SizedBox(height: isPhone ? 16 : 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
@@ -1048,16 +1021,16 @@ class _SplitDialogState extends ConsumerState<_SplitDialog> {
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
-                    onPressed:
-                        (totalSelected == 0 ||
+                    onPressed: (_getTotalSelectedQty == 0 ||
                             (_action == 'table' && _targetTableId == null))
                         ? null
                         : () {
                             Navigator.of(context).pop();
                             final selectedQuantities =
                                 Map<String, int>.fromEntries(
-                                  _quantities.entries.where((e) => e.value > 0),
-                                );
+                              _quantities.entries
+                                  .where((e) => e.value > 0),
+                            );
                             widget.onSplit(
                               selectedQuantities,
                               _action,
@@ -1078,6 +1051,7 @@ class _SplitDialogState extends ConsumerState<_SplitDialog> {
 
 class _InvoicePaymentDialog extends ConsumerStatefulWidget {
   const _InvoicePaymentDialog({required this.invoice});
+
   final Map<String, dynamic> invoice;
 
   @override
@@ -1085,180 +1059,125 @@ class _InvoicePaymentDialog extends ConsumerStatefulWidget {
       _InvoicePaymentDialogState();
 }
 
-class _InvoicePaymentDialogState extends ConsumerState<_InvoicePaymentDialog> {
+class _InvoicePaymentDialogState
+    extends ConsumerState<_InvoicePaymentDialog> {
   String _method = 'cash';
   final TextEditingController _amountCtrl = TextEditingController();
   final TextEditingController _receivedCtrl = TextEditingController();
   final TextEditingController _referenceCtrl = TextEditingController();
   bool _loading = false;
-  bool _loadingInvoice = true;
-  Map<String, dynamic>? _fullInvoice;
 
   @override
-  void initState() {
-    super.initState();
-    _loadInvoice();
+  void dispose() {
+    _amountCtrl.dispose();
+    _receivedCtrl.dispose();
+    _referenceCtrl.dispose();
+    super.dispose();
   }
-
-  Future<void> _loadInvoice() async {
-    // If invoice already has 'total', it's complete
-    if (widget.invoice.containsKey('total')) {
-      setState(() {
-        _fullInvoice = widget.invoice;
-        _loadingInvoice = false;
-      });
-      final total = (widget.invoice['total'] as num).toDouble();
-      _amountCtrl.text = total.toStringAsFixed(2);
-      return;
-    }
-
-    // Otherwise, fetch from DB
-    final invoiceId = widget.invoice['id'] as String;
-    try {
-      final repo = ref.read(ordersRepositoryProvider);
-      final response = await repo.getInvoiceById(invoiceId);
-
-      if (mounted) {
-        setState(() {
-          _fullInvoice = response;
-          _loadingInvoice = false;
-        });
-        final total = (response['total'] as num).toDouble();
-        _amountCtrl.text = total.toStringAsFixed(2);
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _loadingInvoice = false);
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Fehler beim Laden der Rechnung: $e')),
-        );
-      }
-    }
-  }
-
-  double get _invoiceTotal =>
-      (_fullInvoice?['total'] as num?)?.toDouble() ?? 0.0;
-  String get _invoiceNumber =>
-      (_fullInvoice?['invoice_number'] as String?) ?? 'N/A';
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
-    if (_loadingInvoice) {
-      return const Dialog(
-        child: SizedBox(
-          width: 300,
-          height: 200,
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      );
-    }
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isPhone = screenWidth < 768;
 
     return Dialog(
       child: SizedBox(
-        width: 450,
+        width: isPhone ? screenWidth * 0.9 : 400,
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.all(isPhone ? 12 : 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Rechnung $_invoiceNumber',
+                'Zahlung für Abrechnung',
                 style: theme.textTheme.titleLarge,
               ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Summe:'),
-                  Text(
-                    '€ ${_invoiceTotal.toStringAsFixed(2)}',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                ],
+              SizedBox(height: isPhone ? 12 : 16),
+              Text(
+                'Zahlungsmethode:',
+                style: theme.textTheme.labelLarge,
               ),
-              const SizedBox(height: 16),
-              Text('Zahlungsart:', style: theme.textTheme.labelLarge),
+              SizedBox(height: isPhone ? 6 : 8),
               SegmentedButton<String>(
                 segments: const [
-                  ButtonSegment(value: 'cash', label: Text('Bar')),
-                  ButtonSegment(value: 'card', label: Text('Karte')),
+                  ButtonSegment(label: Text('Bargeld'), value: 'cash'),
+                  ButtonSegment(label: Text('Karte'), value: 'card'),
                 ],
                 selected: {_method},
-                onSelectionChanged: (s) => setState(() => _method = s.first),
+                onSelectionChanged: (value) {
+                  setState(() => _method = value.first);
+                },
               ),
-              const SizedBox(height: 12),
+              SizedBox(height: isPhone ? 12 : 16),
               TextField(
                 controller: _amountCtrl,
+                decoration: InputDecoration(
+                  labelText: 'Betrag (€)',
+                  border: const OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: isPhone ? 8 : 12,
+                  ),
+                ),
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
-                decoration: const InputDecoration(labelText: 'Betrag (EUR)'),
-                enabled: false,
               ),
               if (_method == 'cash')
-                TextField(
-                  controller: _receivedCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(
-                      RegExp(r'^\d*\.?\d{0,2}'),
+                Padding(
+                  padding: EdgeInsets.only(top: isPhone ? 8 : 12),
+                  child: TextField(
+                    controller: _receivedCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Erhalten (€)',
+                      border: const OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: isPhone ? 8 : 12,
+                      ),
                     ),
-                  ],
-                  decoration: const InputDecoration(
-                    labelText: 'Erhalten (EUR) – optional',
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                   ),
                 ),
               if (_method == 'card')
-                TextField(
-                  controller: _referenceCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Referenz – optional',
-                  ),
-                ),
-              const SizedBox(height: 16),
-              if (_method == 'cash' && _receivedCtrl.text.isNotEmpty)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Wechselgeld:'),
-                      Text(
-                        '€ ${((double.tryParse(_receivedCtrl.text) ?? 0) - _invoiceTotal).clamp(0, double.infinity).toStringAsFixed(2)}',
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          color: theme.colorScheme.primary,
-                        ),
+                  padding: EdgeInsets.only(top: isPhone ? 8 : 12),
+                  child: TextField(
+                    controller: _referenceCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Referenznummer (optional)',
+                      border: const OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: isPhone ? 8 : 12,
                       ),
-                    ],
+                    ),
                   ),
                 ),
+              SizedBox(height: isPhone ? 16 : 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: _loading
-                        ? null
-                        : () => Navigator.of(context).pop(),
+                    onPressed: () => Navigator.of(context).pop(),
                     child: const Text('Abbrechen'),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
-                    onPressed: _loading ? null : _onPaymentComplete,
+                    onPressed: _loading ? null : _savePayment,
                     child: _loading
                         ? const SizedBox(
                             width: 20,
                             height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
                           )
-                        : const Text('Zahlung abschließen'),
+                        : const Text('Zahlung speichern'),
                   ),
                 ],
               ),
@@ -1269,62 +1188,58 @@ class _InvoicePaymentDialogState extends ConsumerState<_InvoicePaymentDialog> {
     );
   }
 
-  Future<void> _onPaymentComplete() async {
+  Future<void> _savePayment() async {
     final repo = ref.read(ordersRepositoryProvider);
     final invoiceId = widget.invoice['id'] as String;
     final amount = double.tryParse(_amountCtrl.text.trim()) ?? 0;
 
     if (amount <= 0) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Ungültiger Betrag')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Bitte gültigen Betrag eingeben')),
+      );
       return;
+    }
+
+    double? received;
+    double? change;
+    String? refStr;
+
+    if (_method == 'cash') {
+      received = double.tryParse(_receivedCtrl.text.trim());
+      if (received != null && received >= amount) {
+        change = received - amount;
+      }
+    } else if (_method == 'card') {
+      refStr = _referenceCtrl.text.trim().isEmpty
+          ? null
+          : _referenceCtrl.text.trim();
     }
 
     setState(() => _loading = true);
 
     try {
-      double? received;
-      double? change;
-      String? refStr;
-
-      if (_method == 'cash') {
-        received = double.tryParse(_receivedCtrl.text.trim());
-        if (received != null && received >= amount) {
-          change = received - amount;
-        }
-      } else if (_method == 'card') {
-        refStr = _referenceCtrl.text.trim().isEmpty
-            ? null
-            : _referenceCtrl.text.trim();
-      }
-
-      // Paralleles Ausführen: Payment + Invoice Completion
-      await Future.wait([
-        repo.addPaymentToInvoice(
-          invoiceId: invoiceId,
-          method: _method,
-          amount: amount,
-          receivedAmount: received,
-          changeAmount: change,
-          reference: refStr,
-        ),
-        repo.completeInvoice(invoiceId),
-      ]);
+      await repo.addPayment(
+        orderId: invoiceId,
+        method: _method,
+        amount: amount,
+        receivedAmount: received,
+        changeAmount: change,
+        reference: refStr,
+      );
 
       if (mounted) {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Teilrechnung $_invoiceNumber bezahlt')),
+          const SnackBar(content: Text('Zahlung gespeichert')),
         );
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _loading = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Fehler: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Fehler: $e')),
+        );
       }
+      setState(() => _loading = false);
     }
   }
 }
