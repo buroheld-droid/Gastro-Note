@@ -25,13 +25,13 @@ CREATE INDEX IF NOT EXISTS idx_orders_deleted_status ON orders(status, deletion_
 CREATE OR REPLACE VIEW deleted_orders_view AS
 SELECT 
   o.id,
-  o.number as order_number,
+  o.order_number,
   o.table_id,
-  COALESCE(t.number::TEXT, 'System') as table_number,
+  COALESCE(t.table_number::TEXT, 'System') as table_number,
   o.total as order_total,
   o.subtotal as order_net,
   o.tax_amount as order_tax,
-  o.payment_method,
+  STRING_AGG(DISTINCT p.payment_method, ', ' ORDER BY p.payment_method) as payment_method,
   o.status,
   o.created_by,
   (COALESCE(ew.first_name, 'Unknown') || ' ' || COALESCE(ew.last_name, '')) as waiter_name,
@@ -41,19 +41,20 @@ SELECT
   o.deletion_reason,
   o.deletion_timestamp,
   EXTRACT(EPOCH FROM (NOW() - o.deletion_timestamp)) / 3600 as hours_since_deletion,
-  COUNT(oi.id) OVER (PARTITION BY o.id) as item_count,
-  STRING_AGG(p.name, ', ' ORDER BY p.name) as product_names
+  COUNT(DISTINCT oi.id) as item_count,
+  STRING_AGG(DISTINCT prod.name, ', ' ORDER BY prod.name) as product_names
 FROM orders o
 LEFT JOIN tables t ON o.table_id = t.id
 LEFT JOIN employees ew ON o.created_by = ew.id
 LEFT JOIN employees ed ON o.deleted_by = ed.id
 LEFT JOIN order_items oi ON o.id = oi.order_id
-LEFT JOIN products p ON oi.product_id = p.id
+LEFT JOIN products prod ON oi.product_id = prod.id
+LEFT JOIN payments p ON o.id = p.order_id
 WHERE o.deletion_timestamp IS NOT NULL
   AND DATE(o.deletion_timestamp) >= CURRENT_DATE - INTERVAL '90 days'
 GROUP BY 
-  o.id, o.number, o.table_id, t.number, o.total, o.subtotal, o.tax_amount,
-  o.payment_method, o.status, o.created_by, ew.first_name, ew.last_name,
+  o.id, o.order_number, o.table_id, t.table_number, o.total, o.subtotal, o.tax_amount,
+  o.status, o.created_by, ew.first_name, ew.last_name,
   o.completed_at, o.deleted_by, ed.first_name, ed.last_name, 
   o.deletion_reason, o.deletion_timestamp
 ORDER BY o.deletion_timestamp DESC;
@@ -120,8 +121,8 @@ BEGIN
   v_result := jsonb_build_object(
     'success', true,
     'order_id', v_order.id,
-    'order_number', v_order.number,
-    'table_number', (SELECT number FROM tables WHERE id = v_order.table_id),
+    'order_number', v_order.order_number,
+    'table_number', (SELECT table_number FROM tables WHERE id = v_order.table_id),
     'original_total', v_order.total,
     'deleted_at', NOW()::TEXT,
     'deleted_by', p_deleted_by_id,
