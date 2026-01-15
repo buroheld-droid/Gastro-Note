@@ -667,4 +667,89 @@ class OrdersRepository {
       'created_by': employeeId,
     });
   }
+
+  /// Bestellung mit Audit Trail löschen (Admin/Manager only)
+  /// RPC Call: delete_order_with_audit
+  Future<Map<String, dynamic>> deleteOrderWithAudit({
+    required String orderId,
+    required String deletedByEmployeeId,
+    required String deletionReason,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'delete_order_with_audit',
+        params: {
+          'p_order_id': orderId,
+          'p_deleted_by_id': deletedByEmployeeId,
+          'p_deletion_reason': deletionReason,
+        },
+      );
+
+      if (response == null) {
+        throw Exception('RPC returned null');
+      }
+
+      return Map<String, dynamic>.from(response as Map);
+    } catch (e) {
+      throw Exception('Fehler beim Löschen der Bestellung: $e');
+    }
+  }
+
+  /// Gelöschte Bestellung wiederherstellen (Admin/Manager only)
+  /// RPC Call: restore_deleted_order
+  Future<Map<String, dynamic>> restoreDeletedOrder({
+    required String orderId,
+    required String restoredByEmployeeId,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'restore_deleted_order',
+        params: {
+          'p_order_id': orderId,
+          'p_restored_by_id': restoredByEmployeeId,
+        },
+      );
+
+      if (response == null) {
+        throw Exception('RPC returned null');
+      }
+
+      return Map<String, dynamic>.from(response as Map);
+    } catch (e) {
+      throw Exception('Fehler beim Wiederherstellen: $e');
+    }
+  }
+
+  /// Hole gelöschte Bestellungen für Admin-View
+  Future<List<Map<String, dynamic>>> getDeletedOrders({
+    DateTime? filterDate,
+  }) async {
+    try {
+      var query = _client.from('deleted_orders_view').select();
+
+      if (filterDate != null) {
+        final dateStr = filterDate.toIso8601String().split('T')[0];
+        query = query.gte('deletion_timestamp', '$dateStr 00:00:00')
+            .lte('deletion_timestamp', '$dateStr 23:59:59');
+      }
+
+      final response = await query;
+      return List<Map<String, dynamic>>.from(
+        response.map((item) => Map<String, dynamic>.from(item as Map)),
+      );
+    } catch (e) {
+      throw Exception('Fehler beim Abrufen gelöschter Bestellungen: $e');
+    }
+  }
+
+  /// Stream von gelöschten Bestellungen (Real-time)
+  Stream<List<Map<String, dynamic>>> getDeletedOrdersStream() {
+    return _client
+        .from('deleted_orders_view')
+        .stream(primaryKey: ['id']).map((List<dynamic> data) {
+      return List<Map<String, dynamic>>.from(
+        data.map((item) => Map<String, dynamic>.from(item as Map)),
+      );
+    });
+  }
 }

@@ -17,7 +17,7 @@ CREATE INDEX idx_orders_status_created_at ON orders(status, created_at);
 CREATE OR REPLACE VIEW daily_employee_revenue_view AS
 SELECT 
   e.id as employee_id,
-  e.name as employee_name,
+  (e.first_name || ' ' || e.last_name) as employee_name,
   e.role,
   COUNT(DISTINCT o.id) as order_count,
   SUM(p.amount) as total_revenue,
@@ -30,7 +30,7 @@ LEFT JOIN payments p ON e.id = p.created_by
 LEFT JOIN orders o ON p.order_id = o.id
 WHERE DATE(p.created_at) = CURRENT_DATE 
    OR p.created_at IS NULL
-GROUP BY e.id, e.name, e.role
+GROUP BY e.id, e.first_name, e.last_name, e.role
 ORDER BY total_revenue DESC NULLS LAST;
 
 -- View für heutige Gesamt-Umsätze

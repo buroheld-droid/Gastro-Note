@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/admin/presentation/admin_dashboard_screen.dart';
 import '../../features/admin/presentation/revenue_dashboard_screen.dart';
+import '../../features/admin/presentation/deleted_orders_screen.dart';
 import '../../features/auth/presentation/pin_login_screen.dart';
 import '../../features/employees/presentation/employees_screen.dart';
 import '../../features/kitchen/presentation/kitchen_screen.dart';
@@ -125,6 +126,16 @@ final routerProvider = Provider<GoRouter>((ref) {
                 name: 'revenue',
                 pageBuilder: (context, state) =>
                     const NoTransitionPage(child: RevenueDashboardScreen()),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/deleted-orders',
+                name: 'deleted-orders',
+                pageBuilder: (context, state) =>
+                    const NoTransitionPage(child: DeletedOrdersAdminScreen()),
               ),
             ],
           ),

@@ -37,6 +37,14 @@ class HomeShell extends ConsumerWidget {
       EmployeeRole.owner,
       EmployeeRole.manager,
     }),
+    _NavItem('Umsätze', Icons.trending_up_rounded, '/revenue', {
+      EmployeeRole.owner,
+      EmployeeRole.manager,
+    }),
+    _NavItem('Gel. Bestellungen', Icons.delete_outline_rounded, '/deleted-orders', {
+      EmployeeRole.owner,
+      EmployeeRole.manager,
+    }),
     _NavItem('Berichte', Icons.insert_chart_outlined_rounded, '/reports', {
       EmployeeRole.owner,
       EmployeeRole.manager,
